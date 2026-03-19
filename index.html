@@ -3,6 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <title>3D Travel Master - Pro Edition</title>
+    <!-- PWA 相关配置 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+
+<script>
+  // 注册 Service Worker 脚本
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js')
+        .then(reg => console.log('App 注册成功'))
+        .catch(err => console.log('App 注册失败', err));
+    });
+  }
+</script>
     <script src="https://unpkg.com/three"></script>
     <script src="https://unpkg.com/globe.gl"></script>
     <style>
