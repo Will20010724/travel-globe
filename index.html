@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Travel Master - Pro Edition</title>
+    <script src="https://unpkg.com/three"></script>
+    <script src="https://unpkg.com/globe.gl"></script>
+    <style>
+        body { margin: 0; background: #000; color: white; font-family: "PingFang SC", "Hiragino Sans", sans-serif; overflow: hidden; }
+        
+        /* 100% 纯净 UI 面板 */
+        #ui-panel {
+            position: absolute; left: 20px; top: 20px; z-index: 1000;
+            background: rgba(10, 10, 10, 0.85); padding: 15px; border-radius: 12px;
+            width: 280px; border: 1px solid gold; backdrop-filter: blur(10px);
+            max-height: 85vh; overflow-y: auto;
+        }
+
+        .lang-switch { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,215,0,0.3); padding-bottom: 10px; }
+        .lang-btn { background: none; border: 1px solid #444; color: #888; padding: 3px 6px; cursor: pointer; border-radius: 4px; font-size: 10px; flex: 1 1 30%; }
+        .lang-btn.active { border-color: gold; color: gold; background: rgba(255,215,0,0.1); }
+
+        .trip-manager { background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; margin-bottom: 15px; border: 1px dashed rgba(255,215,0,0.3); }
+        h4 { margin: 0 0 8px 0; font-size: 13px; color: gold; text-transform: uppercase; }
+
+        input, select, button { width: 100%; margin-top: 8px; padding: 10px; box-sizing: border-box; background: #111; border: 1px solid #444; color: white; border-radius: 6px; font-size: 13px; }
+        button#addBtn { background: gold; color: #000; font-weight: bold; cursor: pointer; border: none; }
+        
+        .stop-item { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); margin-top: 5px; padding: 6px 10px; border-radius: 4px; font-size: 12px; border-left: 2px solid gold; }
+        .del-btn { background: #ff4d4f; color: white; border: none; padding: 2px 6px; border-radius: 4px; cursor: pointer; width: auto; font-size: 10px; }
+
+        #status-bar { position: fixed; top: 5vh; width: 100%; text-align: center; color: gold; font-size: 28px; font-weight: bold; z-index: 500; text-shadow: 0 0 15px rgba(0,0,0,1); opacity: 0; transition: 0.5s; pointer-events: none; }
+
+        /* 右下角总里程表 */
+        #total-dist-ui { position: fixed; bottom: 30px; right: 30px; z-index: 1001; background: rgba(0,0,0,0.7); padding: 15px 25px; border-radius: 10px; border: 1px solid gold; text-align: right; display: none; backdrop-filter: blur(10px); }
+        .dist-val { font-size: 22px; color: gold; font-weight: bold; font-family: monospace; }
+
+        /* 标签样式 */
+        .city-tag { color: gold; background: rgba(0,0,0,0.8); padding: 6px 14px; border-radius: 15px; font-size: 15px; white-space: nowrap; border: 1px solid gold; pointer-events: none; font-weight: bold; display: flex; align-items: center; gap: 8px; }
+        .flag-img { width: 22px; height: 15px; border-radius: 2px; object-fit: cover; }
+        .city-dot { width: 10px; height: 10px; background: gold; border-radius: 50%; box-shadow: 0 0 15px gold; margin: 0 auto 5px auto; }
+        .arc-dist-label { background: gold; color: black; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; white-space: nowrap; box-shadow: 0 0 15px gold; pointer-events: none; transform: translateY(-15px); }
+
+        .bar { position: fixed; width: 100%; height: 0; background: black; z-index: 100; transition: 0.8s; }
+        .active .top { top: 0; height: 10vh; }
+        .active .bottom { bottom: 0; height: 10vh; }
+
+        /* 四角照片布局 */
+        .photo-frame { position: fixed; width: 23vw; aspect-ratio: 4 / 3; z-index: 200; border: 5px solid #fff; display: none; object-fit: cover; box-shadow: 0 15px 40px rgba(0,0,0,0.9); opacity: 0; transition: 0.8s; border-radius: 2px; }
+        #p-tl { top: 20px; left: 20px; } #p-tr { top: 20px; right: 20px; }
+        #p-bl { bottom: 120px; left: 20px; } #p-br { bottom: 120px; right: 20px; }
+
+        #end-panel { position: fixed; bottom: 85px; left: 50%; transform: translateX(-50%); z-index: 1001; display: none; }
+        #end-panel button { padding: 12px 30px; background: gold; color: #000; border-radius: 25px; font-weight: bold; border: none; cursor: pointer; box-shadow: 0 0 15px gold; }
+        
+        .share-row { display: flex; gap: 5px; margin-top: 10px; }
+        .share-btn { background: #333; color: #aaa; font-size: 10px; padding: 5px; border: 1px solid #444; flex: 1; }
+    </style>
+</head>
+<body>
+
+<audio id="bgm-player" crossorigin="anonymous" loop style="display:none"></audio>
+<div id="status-bar"></div>
+<div class="bar top"></div><div class="bar bottom"></div>
+
+<div id="ui-panel">
+    <div class="lang-switch">
+        <button class="lang-btn active" id="lang-zh" onclick="setLang('zh')">简体</button>
+        <button class="lang-btn" id="lang-zh-TW" onclick="setLang('zh-TW')">繁體</button>
+        <button class="lang-btn" id="lang-en" onclick="setLang('en')">EN</button>
+        <button class="lang-btn" id="lang-fr" onclick="setLang('fr')">FR</button>
+        <button class="lang-btn" id="lang-ja" onclick="setLang('ja')">JP</button>
+        <button class="lang-btn" id="lang-ko" onclick="setLang('ko')">KR</button>
+    </div>
+
+    <div class="trip-manager">
+        <h4 id="ui-trip-title">行程分类</h4>
+        <select id="tripSelect" onchange="switchTrip(this.value)"></select>
+        <div style="display:flex; gap:5px;">
+            <input type="text" id="newTripName" placeholder="New Trip">
+            <button id="tripCreateBtn" onclick="createNewTrip()" style="flex:1; background:#4facfe; color:white;">CREATE</button>
+        </div>
+        <div class="share-row">
+            <button class="share-btn" onclick="exportTrip()">EXPORT (备份)</button>
+            <button class="share-btn" onclick="document.getElementById('importFile').click()">IMPORT (导入)</button>
+            <input type="file" id="importFile" style="display:none" onchange="importTrip(this)">
+        </div>
+        <button onclick="deleteCurrentTrip()" id="btn-del-trip" style="background:#222; color:#ff4d4f; font-size:10px; padding:4px; border: 1px solid #333;">DELETE CURRENT</button>
+    </div>
+
+    <h3 id="ui-title" style="margin:0; color:gold; font-size: 18px;">添加目的地</h3>
+    <input type="text" id="cityName" placeholder="武汉 / 沈阳 / 台北">
+    <label id="label-photo" style="font-size: 10px; color: #888; display: block; margin-top: 8px;">照片上传</label>
+    <input type="file" id="photoInput" multiple>
+    <label id="label-bgm" style="font-size: 10px; color: #888; display: block; margin-top: 8px;">背景音乐</label>
+    <input type="file" id="bgmInput" accept="audio/*" onchange="handleMusicUpload(this)">
+
+    <div style="margin-top: 10px;">
+        <label id="label-speed" style="font-size: 10px; color: gold;">生长速度: <span id="speedVal">1.0x</span></label>
+        <input type="range" id="globalSpeed" min="0.5" max="4" step="0.5" value="1" oninput="updateSpeedDisplay(this.value)">
+    </div>
+
+    <button id="addBtn" onclick="addStop()">确认并添加目的地</button>
+    <div id="locationList" style="margin-top:8px; max-height:100px; overflow-y:auto; border-top: 1px solid #333;"></div>
+    
+    <button id="startBtn" onclick="runJourney(false)" style="margin-top:10px; background:#fff; color:#000; display:none">🎬 START PREVIEW</button>
+    <button id="recordBtn" onclick="runJourney(true)" style="background:#ff4d4f; color:white; display:none; margin-top:8px; font-weight:bold;">🔴 RECORD STORY</button>
+</div>
+
+<div id="total-dist-ui">
+    <div id="total-label" style="font-size: 10px; color: #aaa;">总里程</div>
+    <div><span class="dist-val" id="total-val">0</span> <span style="color:gold; font-size:12px;">km</span></div>
+</div>
+
+<div id="end-panel"><button onclick="resetUI()">← BACK / 返回编辑</button></div>
+<img id="p-tl" class="photo-frame"> <img id="p-tr" class="photo-frame">
+<img id="p-bl" class="photo-frame"> <img id="p-br" class="photo-frame">
+<div id="globeViz"></div>
+
+<script>
+    // --- 国际化 ---
+    const i18n = {
+        zh: { tripTitle: "行程分类", title: "添加目的地", photo: "照片上传", bgm: "背景音乐", placeholder: "地名 (武汉 / 台北)", add: "确认并添加", play: "🎬 生成预览", record: "🔴 录制视频", arriving: "抵达：", done: "回顾完成", total: "总里程", speed: "生长速度", restart: "← 返回编辑", delTrip: "删除行程", newTrip: "新行程名称" },
+        'zh-TW': { tripTitle: "行程分類", title: "添加目的地", photo: "照片上傳", bgm: "背景音樂", placeholder: "地名 (台北 / 香港)", add: "確認並添加", play: "🎬 預覽", record: "🔴 錄製視頻", arriving: "抵達：", done: "回顧完成", total: "總里程", speed: "生長速度", restart: "← 返回編輯", delTrip: "刪除行程", newTrip: "新行程名稱" },
+        en: { tripTitle: "Trips", title: "Add Stop", photo: "Photos", bgm: "Music", placeholder: "City Name", add: "Add Point", play: "🎬 PREVIEW", record: "🔴 RECORD", arriving: "Arrived: ", done: "Finished", total: "Total", speed: "Speed", restart: "← BACK", delTrip: "Delete", newTrip: "New Trip" },
+        fr: { tripTitle: "Voyages", title: "Ajouter", photo: "Photos", bgm: "Musique", placeholder: "Lieu", add: "Ajouter", play: "🎬 Lancer", record: "🔴 Enregistrer", arriving: "Arrivée: ", done: "Terminé", total: "Distance", speed: "Vitesse", restart: "← Retour", delTrip: "Supprimer", newTrip: "Nom" },
+        ja: { tripTitle: "旅行リスト", title: "目的地追加", photo: "写真", bgm: "音楽", placeholder: "地名", add: "追加", play: "🎬 再生", record: "🔴 録画", arriving: "到着：", done: "完了", total: "総距離", speed: "再生速度", restart: "← 戻る", delTrip: "削除", newTrip: "新しい旅行" },
+        ko: { tripTitle: "여행 관리", title: "장소 추가", photo: "사진", bgm: "음악", placeholder: "지명", add: "추가", play: "🎬 시작", record: "🔴 녹화", arriving: "도착: ", done: "완료", total: "총 거리", speed: "속도", restart: "← 뒤로", delTrip: "삭제", newTrip: "새 여행" }
+    };
+
+    let currentLang = 'zh';
+    function setLang(lang) {
+        currentLang = lang;
+        document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+        if(document.getElementById('lang-' + lang)) document.getElementById('lang-' + lang).classList.add('active');
+        const t = i18n[lang];
+        document.getElementById('ui-trip-title').innerText = t.tripTitle;
+        document.getElementById('ui-title').innerText = t.title;
+        document.getElementById('cityName').placeholder = t.placeholder;
+        document.getElementById('label-photo').innerText = t.photo;
+        document.getElementById('label-bgm').innerText = t.bgm;
+        document.getElementById('addBtn').innerText = t.add;
+        document.getElementById('startBtn').innerText = t.play;
+        document.getElementById('recordBtn').innerText = t.record;
+        document.getElementById('total-label').innerText = t.total;
+        document.getElementById('btn-del-trip').innerText = t.delTrip;
+        document.getElementById('newTripName').placeholder = t.newTrip;
+        updateSpeedDisplay(document.getElementById('globalSpeed').value);
+    }
+    function updateSpeedDisplay(val) { document.getElementById('speedVal').innerText = val + "x"; }
+
+    function getFlagImgUrl(countryCode) {
+        let code = countryCode.toLowerCase();
+        if (code === 'tw') code = 'cn'; 
+        return `https://flagcdn.com/w40/${code}.png`;
+    }
+
+    const DB_NAME = "TravelLib_V46_Pure";
+    let db, currentTripId = "default_trip";
+
+    const initDB = () => new Promise(res => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = e => { e.target.result.createObjectStore('trips', { keyPath: 'name' }); };
+        req.onsuccess = e => { db = e.target.result; res(); };
+    });
+
+    const loadAllTrips = async () => {
+        const tx = db.transaction('trips', 'readonly');
+        const all = await new Promise(r => tx.objectStore('trips').getAll().onsuccess = e => r(e.target.result));
+        const select = document.getElementById('tripSelect'); select.innerHTML = "";
+        if(!all || all.length === 0) { await createNewTrip("My Journey"); return; }
+        all.forEach(t => { const opt = document.createElement('option'); opt.value = t.name; opt.innerText = t.name; select.appendChild(opt); });
+        currentTripId = all[0].name; select.value = currentTripId; loadTripData(currentTripId);
+    };
+
+    const createNewTrip = async (name) => {
+        const tripName = name || document.getElementById('newTripName').value.trim();
+        if(!tripName) return;
+        const tx = db.transaction('trips', 'readwrite');
+        tx.objectStore('trips').put({ name: tripName, stops: [], bgm: null });
+        currentTripId = tripName; await loadAllTrips();
+    };
+
+    const deleteCurrentTrip = async () => {
+        if(!confirm("Confirm delete?")) return;
+        db.transaction('trips', 'readwrite').objectStore('trips').delete(currentTripId);
+        await loadAllTrips();
+    };
+
+    const loadTripData = (name) => {
+        currentTripId = name;
+        db.transaction('trips', 'readonly').objectStore('trips').get(name).onsuccess = e => {
+            const data = e.target.result;
+            if(data.bgm) document.getElementById('bgm-player').src = URL.createObjectURL(data.bgm); else document.getElementById('bgm-player').src = "";
+            if(data.stops) {
+                stops = data.stops.map((s, idx) => ({ ...s, photoBlobs: data.photoBlobs[idx], photos: data.photoBlobs[idx].map(b => URL.createObjectURL(b)) }));
+                renderList();
+            } else { stops = []; renderList(); }
+        };
+    };
+
+    const world = Globe()(document.getElementById('globeViz'))
+        .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+        .showAtmosphere(true).atmosphereAltitude(0.25)
+        .htmlElementsData([])
+        .htmlElement(d => {
+            const c = document.createElement('div');
+            if (d.type === 'dist') { c.className = 'arc-dist-label'; c.innerText = d.text; }
+            else { c.innerHTML = `<div class="city-dot"></div><div class="city-tag">${d.name} <img src="${d.flagUrl}" class="flag-img"></div>`; }
+            return c;
+        })
+        .arcColor(() => 'gold').arcAltitude(0.25);
+
+    window.onload = async () => { await initDB(); await loadAllTrips(); setLang('zh'); };
+
+    const LOCAL_DB = { "武汉": [30.58, 114.27, "cn"], "沈阳": [41.80, 123.43, "cn"], "台北": [25.03, 121.56, "cn"], "香港": [22.31, 114.16, "cn"], "新加坡": [1.35, 103.81, "sg"], "BANGKOK": [13.75, 100.5, "th"], "清迈": [18.78, 98.98, "th"] };
+
+    async function addStop() {
+        const nIn = document.getElementById('cityName'); const name = nIn.value.trim();
+        if(!name) return;
+        let lat, lng, flagUrl = "";
+        const upper = name.toUpperCase();
+        if (LOCAL_DB[upper]) {
+            const entry = LOCAL_DB[upper]; lat = entry[0]; lng = entry[1]; flagUrl = getFlagImgUrl(entry[2]);
+        } else {
+            try {
+                const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(name)}&addressdetails=1&limit=1`);
+                const data = await resp.json();
+                if(data[0]) { lat = parseFloat(data[0].lat); lng = parseFloat(data[0].lon); flagUrl = getFlagImgUrl(data[0].address.country_code); }
+                else { alert("Error"); return; }
+            } catch(e) { alert("Network Error"); return; }
+        }
+        stops.push({ name, lat, lng, flagUrl, photoBlobs: Array.from(document.getElementById('photoInput').files), photos: Array.from(document.getElementById('photoInput').files).map(f => URL.createObjectURL(f)), duration: 3500 });
+        saveCurrentTripDataManual(); renderList(); nIn.value = "";
+    }
+
+    function saveCurrentTripDataManual() {
+        const tx = db.transaction('trips', 'readwrite');
+        const store = tx.objectStore('trips');
+        store.get(currentTripId).onsuccess = e => {
+            const data = e.target.result; data.stops = stops.map(s => ({ ...s, photos: [] })); data.photoBlobs = stops.map(s => s.photoBlobs); store.put(data);
+        };
+    }
+
+    function renderList() {
+        const list = document.getElementById('locationList'); list.innerHTML = "";
+        stops.forEach((s, i) => {
+            const div = document.createElement('div'); div.className = 'stop-item';
+            div.innerHTML = `<span>${i+1}. ${s.name}</span><button class="del-btn" onclick="deleteStop(${i})">X</button>`;
+            list.appendChild(div);
+        });
+        const show = stops.length >= 2 ? "block" : "none";
+        document.getElementById('startBtn').style.display = show; document.getElementById('recordBtn').style.display = show;
+        world.htmlElementsData(stops);
+    }
+
+    function deleteStop(i) { stops.splice(i, 1); saveCurrentTripDataManual(); renderList(); }
+
+    // --- 导出逻辑 ---
+    function exportTrip() {
+        const tx = db.transaction('trips', 'readonly');
+        tx.objectStore('trips').get(currentTripId).onsuccess = e => {
+            const data = e.target.result;
+            // 由于 Blob 无法直接序列化，这里导出 metadata，提示朋友重新上传大附件，或保持简单导出
+            const blob = new Blob([JSON.stringify({ ...data, photoBlobs: [] })], { type: 'application/json' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+            a.download = `${currentTripId}_config.json`; a.click();
+        };
+    }
+
+    function importTrip(input) {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const imported = JSON.parse(e.target.result);
+            const tx = db.transaction('trips', 'readwrite');
+            tx.objectStore('trips').put({ ...imported, photoBlobs: [], stops: [] });
+            alert("配置已导入，请重新选择当前分类并添加照片。");
+            await loadAllTrips();
+        };
+        reader.readAsText(input.files[0]);
+    }
+
+    async function runJourney(doRecord) {
+        if (doRecord) {
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "browser", frameRate: 60 }, audio: true });
+            var mediaRecorder = new MediaRecorder(screenStream, { mimeType: 'video/webm; codecs=vp9' });
+            var chunks = []; mediaRecorder.ondataavailable = e => chunks.push(e.data);
+            mediaRecorder.onstop = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(chunks, {type:'video/webm'})); a.download = `Trip.webm`; a.click(); screenStream.getTracks().forEach(t => t.stop()); };
+            mediaRecorder.start();
+        }
+
+        document.getElementById('bgm-player').play().catch(()=>{});
+        const speed = parseFloat(document.getElementById('globalSpeed').value);
+        isPlaying = true; document.body.classList.add('active'); document.getElementById('ui-panel').style.display = 'none';
+        document.getElementById('total-dist-ui').style.display = 'block';
+        
+        let totalD = 0; let arcHistory = []; let distLabels = [];
+
+        for (let i = 0; i < stops.length; i++) {
+            if (!isPlaying) break;
+            const cur = stops[i];
+            world.htmlElementsData([...stops.slice(0, i + 1), ...distLabels]);
+            world.pointOfView({ lat: cur.lat, lng: cur.lng, altitude: 0.45 }, 1500 / speed);
+            await new Promise(r => setTimeout(r, 1600 / speed));
+            if (cur.photos.length > 0) { showPhotos(cur.photos); await new Promise(r => setTimeout(r, 3800 / speed)); hidePhotos(); }
+
+            if (i < stops.length - 1) {
+                const next = stops[i + 1];
+                const d = getDistanceKM(cur.lat, cur.lng, next.lat, next.lng);
+                const duration = 3000 / speed;
+                const startTime = Date.now();
+                world.pointOfView({ lat: next.lat, lng: next.lng, altitude: 1.1 }, duration);
+
+                await new Promise(resolve => {
+                    const timer = setInterval(() => {
+                        const elapsed = Date.now() - startTime;
+                        const progress = Math.min(1, elapsed / duration);
+                        const growArc = { startLat: cur.lat, startLng: cur.lng, endLat: cur.lat + (next.lat - cur.lat) * progress, endLng: cur.lng + (next.lng - cur.lng) * progress, color: 'gold' };
+                        world.arcsData([...arcHistory, growArc]);
+                        if (progress >= 1 || !isPlaying) { clearInterval(timer); resolve(); }
+                    }, 20);
+                });
+
+                distLabels.push({ lat: (cur.lat + next.lat) / 2, lng: (cur.lng + next.lng) / 2, type: 'dist', text: `${d} km` });
+                arcHistory.push({ startLat: cur.lat, startLng: cur.lng, endLat: next.lat, endLng: next.lng, color: 'rgba(255,215,0,0.6)' });
+                world.arcsData([...arcHistory]);
+                totalD += d; document.getElementById('total-val').innerText = totalD;
+                await new Promise(r => setTimeout(r, 300 / speed));
+            }
+        }
+        if (doRecord) mediaRecorder.stop();
+        document.getElementById('end-panel').style.display = 'block';
+    }
+
+    function resetUI() { isPlaying = false; document.body.classList.remove('active'); document.getElementById('ui-panel').style.display = 'block'; document.getElementById('end-panel').style.display = 'none'; document.getElementById('total-dist-ui').style.display = 'none'; document.getElementById('bgm-player').pause(); world.arcsData([]); world.htmlElementsData(stops); world.pointOfView({ altitude: 2.5 }, 1500); }
+    function showPhotos(urls) { const ids = ['p-tl', 'p-tr', 'p-bl', 'p-br']; ids.forEach((id, idx) => { const el = document.getElementById(id); if(urls[idx]) { el.src = urls[idx]; el.style.display = 'block'; setTimeout(() => el.style.opacity = 1, 50); } else el.style.display = 'none'; }); }
+    function hidePhotos() { if (!isPlaying) return; ['p-tl', 'p-tr', 'p-bl', 'p-br'].forEach(id => { const el = document.getElementById(id); el.style.opacity = 0; setTimeout(() => el.style.display = 'none', 800); }); }
+    function handleMusicUpload(i) { if(i.files[0]) { const f = i.files[0]; const tx = db.transaction('trips', 'readwrite').objectStore('trips'); tx.get(currentTripId).onsuccess = e => { const d = e.target.result; d.bgm = f; tx.put(d); document.getElementById('bgm-player').src = URL.createObjectURL(f); }; } }
+    function switchTrip(n) { loadTripData(n); }
+    function getDistanceKM(l1, ln1, l2, ln2) { const R = 6371; const dL = (l2-l1)*Math.PI/180; const dN = (ln2-ln1)*Math.PI/180; const a = Math.sin(dL/2)**2 + Math.cos(l1*Math.PI/180)*Math.cos(l2*Math.PI/180)*Math.sin(dN/2)**2; return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); }
+</script>
+</body>
+</html>
